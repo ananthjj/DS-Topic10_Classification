@@ -1,0 +1,296 @@
+---
+title: "Problem Set 9"
+author: "Ananth Josyula"
+institute: "Vanderbilt University"
+date: "Due Date: 2022/11/27 @ 11:59PM CST"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Getting Set Up
+
+If you haven't already, create a folder for this course, and then a subfolder called `Topic10_Classification`, and two additional subfolders within `code` and `data`.
+
+Open `RStudio` and create a new RMarkDown file (`.Rmd`) by going to `File -> New File -> R Markdown...`.
+Change the title to `"DS1000: Problem Set 9"` and the author to your full name. Save this file as `[LAST NAME]_ps9.Rmd` to your `code` folder.
+
+If you haven't already, download the `admit_data.rds` file from the course [github page](https://github.com/jbisbee1/DS1000-F2022/blob/master/Lectures/Topic10_Classification/data/admit_data.rds) and save it to your `data` folder.
+
+All of the following questions should be answered using 
+
+Require the `tidyverse` & `tidymodels` packages, and load the `admit_data.rds` data to `ad`. Finally, `set.seed(123)` once at the very beginning, to ensure consistency in results throughout the problem set.
+```{r}
+# INSERT CODE HERE
+require(tidyverse)
+require(tidytext)
+ad <- readRDS("../data/admit_data.rds")
+```
+
+
+## Question 1 [4 points + 3 EC points]
+Plot the univariate visualizations for `yield`, `income`, and `sat`. Justify your choices for how you are visualizing these variables. Then plot the conditional variation between `yield` and `income`, and `yield` and `sat`. Again, justify your choices and then interpret the results. Do these variables matter for `yield`?
+
+EXTRA CREDIT (+1 point): Explain the pattern you observe in the univariate visualization of the SAT scores. What might explain this? 
+
+EXTRA CREDIT (+2 points): Look at these same conditional relationships between `yield` and `income` and `sat`, except divide the continuous measures of `income` and `sat` into deciles using the `ntile()` function, and create a single heatmap for all three variables, where the deciles of `income` and `sat` are on the axes, and the tiles are shaded by the average attendance in each cell. Which students are most likely to attend? Which are least likely to attend? Can you determine whether income or SAT scores matter more for attendance based on this plot?
+
+**HINTS**:
+
+* Univariate Description [part 1](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic5_UnivariateDescription/code/Topic5_UnivariateDescription_part1_slides.html#1) and Univariate Visualization [part 2](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic6_UnivariateVisualization/code/Topic6_UnivariateVisualization_part2_slides.html#1)
+* Conditional Variation [part 1](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic7_ConditionalVariation/code/Topic7_ConditionalVariation_part1_slides.html#1) and [part 2](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic7_ConditionalVariation/code/Topic7_ConditionalVariation_part2_slides.html#5)
+- [Heatmap example](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic10_Classification/code/Topic10_Classification_part1_slides.html#69)
+
+```{r}
+# INSERT CODE HERE
+ad %>%
+  ggplot(aes(x=yield))+
+  geom_bar()+
+  labs(title = 'Student matriculated',
+       subtitle = "Data from admit_data.rds",
+       x='yes(1) or no(0) ',
+       y='count')
+
+ad %>%
+  ggplot(aes(x=income))+
+  geom_density()+
+  labs(title = 'Distribution of Family income (AGI)',
+       subtitle = "Data from admit_data.rds",
+       x='Income',
+       y='Density')
+
+ad %>%
+  ggplot(aes(x=sat))+
+  geom_density()+
+  labs(title = 'Distribution of SAT',
+       subtitle = "Data from admit_data.rds",
+       x='Score',
+       y='Density')
+
+ad %>%
+  group_by(yield) %>%
+  summarise_at(vars(income,sat), mean,na.rm=T) %>%
+  gather(var,value,-yield) %>%
+  ggplot(aes(x = factor(yield),
+             y = value)) +
+  geom_bar(stat = 'identity') +
+  facet_wrap(~var,scales = 'free')+
+  labs(title = 'Income and SAT vs Yield',
+       subtitle = "Data from admit_data.rds")
+
+ad %>%
+  mutate(satDec = ntile(sat,n = 10)) %>%
+  mutate(incomeDec = ntile(income,n = 10)) %>%
+  group_by(satDec,incomeDec) %>%
+  summarise(avgAttend = mean(yield)) %>%
+  ggplot(aes(x = factor(incomeDec),
+             y = factor(satDec),
+             fill = avgAttend)) +
+  geom_tile() +
+  scale_fill_gradient(low = 'darkblue',
+                      high = 'lightblue')+
+  labs(title = 'Income and SAT on Yield',
+       subtitle = "Data from admit_data.rds")
+
+```
+
+> - Because yield is a categorical variable and is represented by either a 0 or 1, the univariate relationship is best described using a bar plot However, because both SAT and Income are continuous variables, they are best described using a density graph. Finally, because the conditional relationship between Yield and SAT involves both categorical and continuous variables, a bar plot best describes their relationship.  Based on the plots, when a student matriculates there is a strong correlation that the student also has a high mean Income. Similarly, when a student matriculates there is also a strong correlation that the student also has a higher mean SAT. Thus, it can be concluded that Yield does correlate with both SAT and Income.
+Based on the SAT univariate analysis, there exists a mean around 1200 that is skewed to the right as signified by the longer tail to the right. This right skew could be due to the fact that there are very few individuals who scored very high on the exam. Presumably, there are more students who do really badly on the exam from lack of preparation or other factors compared to those who study a lot and still fail to score much higher than the mean. Additionally, the graph is bimodal with two local maximums around 1200.
+Based on the plot above, students are more likely to attend a school if they have higher income and higher SAT. Similarly, students are less likely to attend a school if they have lower income and lower SAT. However, based solely on the heatmap alone, it is difficult to estimate which variable had a greater contributory impact on yield.
+
+## Question 2 [4 points]
+Now start with the simplest way of predicting attendance: the conditional mean. Specifically, calculate declines for `income` and `sat` called `incomeDec` and `satDec` using the `ntile()` function. Then calculate the average attendance in each cell using `group_by()` and `mutate()`, and finally predict attendance as 1 if the average is greater than 0.5, and 0 otherwise, using an `ifelse()` function. Evaluate the performance in terms of **accuracy**, **sensitivity**, and **specificity**. Finally, define these terms and describe your results for a general audience reader who doesn't understand statistics.
+
+**HINTS**:
+
+* [Conditional means](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic10_Classification/code/Topic10_Classification_part1_slides.html#72)
+* [Sensitivity & Specificity](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic10_Classification/code/Topic10_Classification_part1_slides.html#90)
+
+```{r}
+# INSERT CODE HERE
+ad <- ad %>%
+  mutate(satDec = ntile(sat,n = 10), incomeDec = ntile(income,n = 10)) %>%
+  group_by(satDec,incomeDec) %>%
+  mutate(avgAttend = mean(yield)) %>%
+  ungroup() %>%
+  mutate(pred_attend = ifelse(avgAttend > 0.5,1,0)) 
+
+ad %>%
+  group_by(yield) %>%
+  mutate(total_attend = n())%>%
+  group_by(yield, pred_attend) %>%
+  summarise(n(),`Actually Attend` = mean(total_attend))%>%
+  mutate(Proportion = `n()`/`Actually Attend`) %>%
+  rename(`Predicted to Attend` = `n()`)
+```
+
+> - Based on the predictions, 535/684 students did not matriculate who were expected not to matriculate. This means that 78.2% of those students predicted not attend were correctly predicted not to attend. However, simultaneously 149 students who were predicted to attend did not end up actually attending. 211/1466 students were predicted not to attend, yet ended up attending in the end; so, 1255/1466 or 85.6% students correctly predicted to attend ended up actually attending. Thus, the overall accuracy is around (535+1255)/2150 (83.25%). The sensitivity or proportion of predicted to matriculate divided by actually matriculated is 85.6%. The specificity or proportion of predicted to not matriculate divided by did not matriculate is 78.2%.
+
+## Question 3 [4 points]
+Now predict whether students will attend using a linear regression model (using the `lm()` function) that predicts `yield` as a function of `income` and `sat` (**not** using deciles, just the continuous versions). Calculate **accuracy**, **sensitivity**, and **specificity** from this model where the threshold is again 0.5, and compare to the results from Question 3. Does this model do better?
+
+**HINTS**:
+
+* [Linear regression for classification](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic10_Classification/code/Topic10_Classification_part1_slides.html#81)
+
+
+```{r}
+# INSERT CODE HERE
+mLM <- lm(yield ~ scale(sat) + scale(income),ad)
+
+summary(mLM)
+
+ad <- ad %>%
+  ungroup() %>%
+  mutate(avgAttend = predict(mLM)) %>%
+  mutate(pred_attend = ifelse(avgAttend > .5, 1,0))
+
+ad %>%
+  group_by(yield) %>%
+  mutate(total_attend = n()) %>%
+  group_by(yield,pred_attend, total_attend) %>%
+  summarise(totalStudents = n()) %>%
+  mutate(prop = totalStudents / total_attend) %>%
+  ungroup() %>%
+  mutate(accuracy = sum((yield == pred_attend)*totalStudents) / 2150)
+```
+
+> - Based on the linear regression model above, there exists an intercept of .681, a scale(sat) of .131, and a scale(income) of .1764. While the accuracy of the regression model is 79.6 which is lower than before, the sensitivity and specificity of 91.7% and 53.5% respectively highlights how the model is a better predictor of those who will matriculate than a predictor of who will not matriculate.
+
+## Question 4 [4 points]
+Now recalculate **sensitivity**, **specificity**, and **accuracy** using different thresholds, ranging from 0 to 1, incrementing by 0.025 (use the `seq(from,to,by)` function). Plot the relationship between these thresholds and both the sensitivity and the specificity. What is the optimal threshold to balance the trade-off between **sensitivity** and **specificity**? Then plot ROC Curve and calculate the AUC. 
+
+**HINTS**:
+
+* [Threshold loop](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic10_Classification/code/Topic10_Classification_part1_slides.html#95)
+* [ROC](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic10_Classification/code/Topic10_Classification_part1_slides.html#97)
+* [AUC](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic10_Classification/code/Topic10_Classification_part1_slides.html#103)
+
+
+```{r}
+# INSERT CODE HERE
+thresholdRes <- NULL
+
+for(i in seq(0,1,by = .025)) {
+  thresholdRes <- ad %>%
+    mutate(pred_attend = ifelse(avgAttend > i,1,0)) %>%
+    group_by(yield) %>%
+    mutate(total_attend = n()) %>%
+    group_by(yield,pred_attend,total_attend) %>%
+    summarise(totalStudents = n(),.groups = 'drop') %>%
+    mutate(prop = totalStudents / total_attend) %>%
+    mutate(threshold = i) %>%
+    bind_rows(thresholdRes)
+}
+
+thresholdRes %>%
+  filter(yield == pred_attend) %>%
+  ggplot(aes(x = threshold,y = prop, color = factor(yield))) +
+  geom_line() +
+  labs(subtitle = "Data from admit_data.rds")
+
+  
+
+thresholdRes %>%
+  mutate(metric = ifelse(yield == 0 & pred_attend == 0, 'Specificity',
+                         ifelse(yield == 1 & pred_attend == 1,'Sensitivity',NA))) %>%
+  drop_na(metric) %>%
+  select(prop,metric,threshold) %>%
+  spread(metric,prop,fill = 0) %>%
+  ggplot(aes(x = 1-Specificity,
+             y = Sensitivity)) +
+  geom_line() +
+  geom_abline(intercept = 0, slope = 1,linetype = 'dashed') +
+  labs(subtitle = "Data from admit_data.rds")
+
+require(tidymodels)
+roc_auc(data = ad %>%
+          ungroup() %>%
+          mutate(yield = factor(yield,levels = c('1','0'))),
+        truth = yield,estimate = avgAttend)
+```
+
+> - The optimal threshold for sensitivity and specificity is where both lines intersect around 0.6. The AOC is 87.47.
+
+## Question 5 [4 points]
+Re-do questions 3 and 4 using a logistic regression. Does this perform better than a linear regression model?
+
+**HINTS**:
+
+* [Logit regression](https://www.jamesbisbee.com/DS1000-F2022/Lectures/Topic10_Classification/code/Topic10_Classification_part2_slides.html#35)
+
+```{r}
+# INSERT CODE HERE
+#TRAIN
+mlogistic <- glm(yield ~ sat + income + legacy, ad,family = binomial(link = 'logit'))
+
+summary(mlogistic)
+
+#PREDICT
+trained <- ad %>%
+  mutate(avgAttend = predict(mlogistic,type = 'response'))%>%
+  mutate(pred_attend = ifelse(avgAttend > .5, 1,0))
+
+trained %>%
+  group_by(yield) %>%
+  mutate(total_attend = n()) %>%
+  group_by(yield,pred_attend,
+           total_attend) %>%
+  summarise(totalStudents = n()) %>%
+  mutate(prop = totalStudents / total_attend) %>%
+  ungroup() %>%
+  mutate(accuracy = sum((yield == pred_attend)*totalStudents) / 2150)
+
+#EVALUATE
+thresholdRes2 <- NULL
+for(i in seq(0,1,by = .025)) {
+  thresholdRes2 <- trained %>%
+    mutate(pred_attend = ifelse(avgAttend > i,1,0)) %>%
+    group_by(yield) %>%
+    mutate(total_attend = n()) %>%
+    group_by(yield,pred_attend,total_attend) %>%
+    summarise(totalStudents = n(),.groups = 'drop') %>%
+    mutate(prop = totalStudents / total_attend) %>%
+    mutate(threshold = i) %>%
+    bind_rows(thresholdRes2)
+  }
+thresholdRes2 %>%
+  filter(yield == pred_attend) %>%
+  ggplot(aes(x = threshold,y = prop,
+             color = factor(yield))) +
+  geom_line() +
+  labs(subtitle = "Data from admit_data.rds")
+
+
+thresholdRes %>%
+  mutate(metric = ifelse(yield == 0 & pred_attend == 0, 'Specificity',
+                         ifelse(yield == 1 & pred_attend == 1,'Sensitivity',NA))) %>%
+  drop_na(metric) %>%
+  select(prop,metric,threshold) %>%
+  spread(metric,prop,fill = 0) %>%
+  ggplot(aes(x = 1-Specificity,
+             y = Sensitivity)) +
+  geom_line() +
+  geom_abline(intercept = 0,
+              slope = 1,linetype = 'dashed') +
+  labs(subtitle = "Data from admit_data.rds")
+
+
+require(tidymodels)
+roc_auc(data = trained %>%
+          ungroup() %>%
+          mutate(yield = factor(yield, levels = c('1','0'))),
+        truth = yield,estimate = avgAttend)
+```
+
+> - This model is better than the previous linear regression model since its overall accuracy is 82.6% which is better than the earlier 79.6%. With a threshold of 0.5, the sensitivity and specificity are 87.8% and 71.5% respectively. However, it is now evident that the optimal threshold is around 6.4 to maximize sensitivity and specificity. Lastly, the AOC of this model is 89.9% which is better than that of the linear regression model.
+
+## Question 6  [4 extra credit points]
+
+Now redo questions 3 and 4 using a random forest via the `ranger` package. Interpret the results. Why should we not be over-excited by the AUC in this approach? What might you do to fix this issue?
+
+```{r}
+# INSERT CODE HERE
+```
+
+> - Write 3-6 sentences here
